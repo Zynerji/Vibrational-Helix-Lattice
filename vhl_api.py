@@ -434,6 +434,60 @@ def batch_compute():
     return jsonify({'results': results})
 
 
+@app.route('/api/orbital/hydrogen', methods=['GET'])
+def get_hydrogen_orbital():
+    """
+    Get hydrogen 2p orbital data (pre-computed or on-demand)
+
+    Returns JSON with radial density, nodal rings, and STED correlations
+    """
+    import os
+
+    # Check if pre-computed data exists
+    orbital_file = os.path.join(CACHE_DIR, 'vhl_h_data.json')
+
+    if os.path.exists(orbital_file):
+        with open(orbital_file, 'r') as f:
+            orbital_data = json.load(f)
+        return jsonify({
+            'source': 'cached',
+            'data': orbital_data
+        })
+
+    # Compute on-demand if file doesn't exist
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['python', 'vhl_hydrogen_orbital.py', '--export', 'json'],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode == 0 and os.path.exists('vhl_h_data.json'):
+            with open('vhl_h_data.json', 'r') as f:
+                orbital_data = json.load(f)
+
+            # Move to cache
+            os.rename('vhl_h_data.json', orbital_file)
+
+            return jsonify({
+                'source': 'computed',
+                'data': orbital_data
+            })
+        else:
+            return jsonify({
+                'error': 'Failed to compute orbital',
+                'stderr': result.stderr
+            }), 500
+
+    except Exception as e:
+        return jsonify({
+            'error': 'Orbital computation failed',
+            'message': str(e)
+        }), 500
+
+
 # ============================================
 # MAIN
 # ============================================
@@ -448,6 +502,7 @@ if __name__ == '__main__':
     print("Endpoints:")
     print("  GET  /api/health")
     print("  GET  /api/elements")
+    print("  GET  /api/orbital/hydrogen          (NEW: H 2p orbital from STED 2013)")
     print("  POST /api/compute/hf")
     print("  POST /api/compute/relativistic")
     print("  POST /api/compute/forces")
